@@ -326,6 +326,23 @@ bool soap_request(const service_info& info, const std::string& action, const std
 
 bool delete_mapping(const service_info& info, uint16_t port, const std::string& protocol);
 
+bool mapping_exists(const service_info& info, uint16_t port, const std::string& protocol)
+{
+    std::string arguments;
+    arguments += "<NewRemoteHost></NewRemoteHost>";
+    arguments += "<NewExternalPort>" + std::to_string(port) + "</NewExternalPort>";
+    arguments += "<NewProtocol>" + protocol + "</NewProtocol>";
+
+    std::string body;
+    if (!soap_request(info, "GetSpecificPortMappingEntry", arguments, body)) {
+        return false;
+    }
+    if (body.find("<errorCode>") != std::string::npos) {
+        return false;
+    }
+    return body.find("NewInternalClient") != std::string::npos;
+}
+
 bool add_mapping(const service_info& info, uint16_t port, const std::string& internal_ip, const std::string& description, const std::string& protocol)
 {
     std::string arguments;
@@ -343,9 +360,15 @@ bool add_mapping(const service_info& info, uint16_t port, const std::string& int
         return false;
     }
 
-    // 718: ConflictInMappingEntry, a rule for this port already exists
-    // (for example from a previous run). Replace it and try once more.
+    // 718: ConflictInMappingEntry. Replace the rule only when it is the same
+    // protocol (a leftover from a previous run). Some routers allow one rule
+    // per external port, so a UDP add conflicts with the TCP rule we just
+    // created; deleting blindly would remove that TCP mapping.
     if (body.find("<errorCode>718</errorCode>") != std::string::npos) {
+        if (!mapping_exists(info, port, protocol)) {
+            spdlog::debug("upnp {} {} conflicts with a different mapping; leaving it in place", protocol, port);
+            return false;
+        }
         delete_mapping(info, port, protocol);
         body.clear();
         if (!soap_request(info, "AddPortMapping", arguments, body)) {

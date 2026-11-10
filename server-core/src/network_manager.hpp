@@ -77,6 +77,8 @@ public:
 
     // Public address (ip:port) when UPnP forwarding succeeded, empty otherwise.
     std::string get_external_endpoint() const;
+    // Extra UPnP detail for the UI (forwarded UDP ports, or a warning).
+    std::string get_upnp_note() const;
     // Token clients must send when authentication is enabled, empty otherwise.
     std::string get_token() const;
 
@@ -103,6 +105,7 @@ private:
     playing_peer_list_t _playing_peer_list;
     std::string _token;
     std::string _external_endpoint;
+    std::string _upnp_note;
     bool _upnp_mapped = false;
     uint16_t _port = 0;
     constexpr static auto _heartbeat_timeout = std::chrono::seconds(5);

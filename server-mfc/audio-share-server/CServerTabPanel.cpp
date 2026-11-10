@@ -251,6 +251,11 @@ void CServerTabPanel::OnBnClickedStartServer()
             } else {
                 info = L"Internet: UPnP port forwarding failed, forward the port on your router manually";
             }
+            auto note = m_network_manager->get_upnp_note();
+            if (!note.empty()) {
+                info += L"\r\n";
+                info += mbs_to_wchars(note).c_str();
+            }
             m_staticInternet.SetWindowTextW(info);
         } else {
             theApp.WriteProfileStringW(L"Internet", L"token", token_str);

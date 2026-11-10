@@ -185,7 +185,9 @@ void network_manager::start_server(const std::string& host, uint16_t port, const
     _token = token;
     _port = port;
     _external_endpoint.clear();
+    _upnp_note.clear();
     _upnp_mapped = false;
+    _udp_servers.clear();
 
     if (enable_upnp && _token.empty()) {
         // Exposing the server to the internet without a token would let anyone
@@ -254,12 +256,19 @@ void network_manager::start_server(const std::string& host, uint16_t port, const
         if (result.success) {
             _upnp_mapped = true;
             spdlog::info("upnp forwarded tcp {} and udp {}", port, fmt::join(result.udp_ports, ", "));
+            if (!result.udp_ports.empty()) {
+                _upnp_note = fmt::format("UDP {}", fmt::join(result.udp_ports, ", "));
+            }
             if (!result.external_ip.empty()) {
                 _external_endpoint = fmt::format("{}:{}", result.external_ip, port);
                 spdlog::info("upnp port forwarding success, public endpoint {}", _external_endpoint);
             }
             if (!result.error.empty()) {
                 spdlog::warn("upnp: {}", result.error);
+                if (!_upnp_note.empty()) {
+                    _upnp_note += ". ";
+                }
+                _upnp_note += result.error;
             }
         } else {
             spdlog::warn("upnp port forwarding failed: {}", result.error);
@@ -295,12 +304,18 @@ void network_manager::stop_server()
         _upnp_mapped = false;
     }
     _external_endpoint.clear();
+    _upnp_note.clear();
     spdlog::info("server stopped");
 }
 
 std::string network_manager::get_external_endpoint() const
 {
     return _external_endpoint;
+}
+
+std::string network_manager::get_upnp_note() const
+{
+    return _upnp_note;
 }
 
 std::string network_manager::get_token() const
@@ -320,6 +335,10 @@ bool network_manager::is_running() const
 
 asio::awaitable<void> network_manager::read_loop(std::shared_ptr<tcp_socket> peer)
 {
+    // No token means the original protocol: every command is allowed.
+    // With a token, the first command must be cmd_auth and it has to match.
+    bool authenticated = _token.empty();
+
     while (true) {
         cmd_t cmd = cmd_t::cmd_none;
         auto [ec, _] = co_await asio::async_read(*peer, asio::buffer(&cmd, sizeof(cmd)));
@@ -372,11 +391,12 @@ asio::awaitable<void> network_manager::read_loop(std::shared_ptr<tcp_socket> pee
                     break;
                 }
             }
+            authenticated = true;
             spdlog::info("auth success from {}", peer->remote_endpoint());
             continue;
         }
 
-        if (!_token.empty()) {
+        if (!authenticated) {
             spdlog::warn("unauthenticated command {} from {}", (uint32_t)cmd, peer->remote_endpoint());
             close_session(peer);
             break;
@@ -496,10 +516,21 @@ asio::awaitable<void> network_manager::accept_udp_loop(std::shared_ptr<udp_socke
     while (true) {
         int id = 0;
         ip::udp::endpoint udp_peer;
-        auto [ec, _] = co_await socket->async_receive_from(asio::buffer(&id, sizeof(id)), udp_peer);
+        auto [ec, n] = co_await socket->async_receive_from(asio::buffer(&id, sizeof(id)), udp_peer);
         if (ec) {
-            spdlog::info("{} {}", __func__, ec);
-            co_return;
+            // Stopping the context aborts the receive. Anything else (a probe
+            // larger than 4 bytes, or Windows reporting ICMP unreachable as
+            // connection_reset after a send) must not take the listener down,
+            // or one bad datagram ends audio for every client on this port.
+            if (ec == asio::error::operation_aborted) {
+                spdlog::info("{} {}", __func__, ec);
+                co_return;
+            }
+            spdlog::warn("udp receive failed: {}", ec.message());
+            continue;
+        }
+        if (n != sizeof(id)) {
+            continue;
         }
 
         fill_udp_peer(id, udp_peer, socket);

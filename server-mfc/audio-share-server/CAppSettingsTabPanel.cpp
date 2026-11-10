@@ -181,17 +181,13 @@ void CAppSettingsTabPanel::OnBnClickedButtonReppairFirewall()
             spdlog::info(L"remove firewall rule: {}", (wchar_t*)app_name);
         }
 
-        long profileTypesBitmask{};
-        THROW_IF_FAILED(pNetFwPolicy2->get_CurrentProfileTypes(&profileTypesBitmask));
-        if ((profileTypesBitmask & NET_FW_PROFILE2_PUBLIC) && (profileTypesBitmask != NET_FW_PROFILE2_PUBLIC)) {
-            profileTypesBitmask ^= NET_FW_PROFILE2_PUBLIC;
-        }
-
         auto pNetFwRule = wil::CoCreateInstance<INetFwRule3>(__uuidof(NetFwRule));
         pNetFwRule->put_Enabled(VARIANT_TRUE);
         pNetFwRule->put_Action(NET_FW_ACTION_ALLOW);
         pNetFwRule->put_ApplicationName(_bstr_t(exe_path.c_str()));
-        pNetFwRule->put_Profiles(profileTypesBitmask);
+        // Include Public. Windows often labels a home LAN as Public, and that
+        // is the interface internet-mode traffic arrives on.
+        pNetFwRule->put_Profiles(NET_FW_PROFILE2_ALL);
 
         pNetFwRule->put_Name(_bstr_t(L"Audio Share Server(TCP-In)"));
         pNetFwRule->put_Description(_bstr_t(L"Audio Share Server(TCP-In)"));

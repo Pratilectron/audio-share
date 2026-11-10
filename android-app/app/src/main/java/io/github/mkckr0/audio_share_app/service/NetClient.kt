@@ -202,29 +202,35 @@ class NetClient(val context: Context) {
                 }
             }
 
+            // Keep telling the server which UDP port reached it. Repeating this
+            // also refreshes the phone's NAT mapping, which otherwise expires
+            // and silently drops the audio.
+            scope.launch {
+                while (true) {
+                    registerUdp(host, port, id)
+                    delay(5.seconds)
+                }
+            }
+
             // audio data read loop
             scope.launch {
-                // Some routers forward only one rule per external port, so the
-                // server also listens on the UDP ports below the TCP port.
-                // Register on every candidate a few times to survive packet loss.
-                for (attempt in 0 until 3) {
-                    for (offset in 0 until 4) {
-                        val udpPort = port - offset
-                        if (udpPort > 0) {
-                            udpSocket.writeIntLE(id, InetSocketAddress(host, udpPort))
-                        }
-                    }
-                    if (attempt < 2) {
-                        delay(200)
-                    }
-                }
-//                udpSocket.writeIntLE(id)
                 while (true) {
                     val buf = udpSocket.readByteBuffer()
                     _callback?.launch {
                         onReceiveAudioData(buf.order(ByteOrder.LITTLE_ENDIAN))
                     }
                 }
+            }
+        }
+    }
+
+    private suspend fun registerUdp(host: String, port: Int, id: Int) {
+        // Some routers forward only one rule per external port, so the server
+        // also listens on the UDP ports below the TCP port.
+        for (offset in 0 until 4) {
+            val udpPort = port - offset
+            if (udpPort > 0) {
+                udpSocket.writeIntLE(id, InetSocketAddress(host, udpPort))
             }
         }
     }
