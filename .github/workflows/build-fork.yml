@@ -29,15 +29,11 @@ jobs:
           $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if (-not $installPath) { throw "Visual Studio C++ toolset not found" }
           Write-Host "Installing ATL/MFC into $installPath"
-          $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
-          $proc = Start-Process -FilePath $installer -Wait -PassThru -ArgumentList @(
-            "modify",
-            "--installPath", $installPath,
-            "--add", "Microsoft.VisualStudio.Component.VC.ATLMFC",
-            "--quiet", "--norestart", "--nocache", "--wait"
-          )
-          if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
-            throw "vs_installer exited with $($proc.ExitCode)"
+          # setup.exe is the CLI. vs_installer.exe rejects `modify` with exit 87.
+          $setup = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          & $setup modify --installPath $installPath --add Microsoft.VisualStudio.Component.VC.ATLMFC --quiet --norestart --wait
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) {
+            throw "setup.exe exited with $LASTEXITCODE"
           }
           $mfc = Get-ChildItem "$installPath\VC\Tools\MSVC" -Recurse -Filter "afxwin.h" -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $mfc) { throw "MFC headers were not found after installing ATLMFC" }
