@@ -19,6 +19,7 @@
 #include "audio_manager.hpp"
 #include "upnp_client.hpp"
 
+#include <array>
 #include <list>
 #include <random>
 #include <ranges>
