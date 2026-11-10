@@ -17,6 +17,7 @@
 package io.github.mkckr0.audio_share_app.ui.screen
 
 import android.app.Application
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -55,6 +56,46 @@ class HomeScreenViewModel(application: Application) : AndroidViewModel(applicati
         started = SharingStarted.Eagerly,
         initialValue = UiState.Loading,
     )
+
+    val rememberOn: StateFlow<Boolean> = application.networkConfigDataStore.data.map {
+        it[booleanPreferencesKey(NetworkConfigKeys.REMEMBER)] ?: true
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val remembered: StateFlow<Set<String>> = application.networkConfigDataStore.data.map {
+        it[stringPreferencesKey(NetworkConfigKeys.REMEMBERED)]
+            .orEmpty()
+            .lineSequence()
+            .map { name -> name.trim() }
+            .filter { name -> name.isNotEmpty() }
+            .toSet()
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    fun setRememberOn(on: Boolean): Job {
+        return viewModelScope.launch {
+            getApplication<Application>().networkConfigDataStore.edit {
+                it[booleanPreferencesKey(NetworkConfigKeys.REMEMBER)] = on
+            }
+        }
+    }
+
+    fun remember(name: String, keep: Boolean): Job {
+        return viewModelScope.launch {
+            getApplication<Application>().networkConfigDataStore.edit { prefs ->
+                val current = prefs[stringPreferencesKey(NetworkConfigKeys.REMEMBERED)]
+                    .orEmpty()
+                    .lineSequence()
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .toMutableSet()
+                if (keep) {
+                    current.add(name)
+                } else {
+                    current.remove(name)
+                }
+                prefs[stringPreferencesKey(NetworkConfigKeys.REMEMBERED)] = current.joinToString("\n")
+            }
+        }
+    }
 
     fun saveNetWorkSettings(host: String, port: Int, token: String): Job {
         return viewModelScope.launch {

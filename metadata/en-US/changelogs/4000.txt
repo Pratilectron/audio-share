@@ -1,0 +1,1 @@
+Connect with a name calculated from the PC instead of an IP address.

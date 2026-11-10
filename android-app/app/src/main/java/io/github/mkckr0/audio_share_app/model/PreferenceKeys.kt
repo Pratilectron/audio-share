@@ -20,6 +20,8 @@ object NetworkConfigKeys {
     const val HOST = "host"
     const val PORT = "port"
     const val TOKEN = "token"
+    const val REMEMBER = "remember_links"
+    const val REMEMBERED = "remembered_names"
 }
 
 object AudioConfigKeys {

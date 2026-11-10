@@ -20,6 +20,8 @@
 #include "upnp_client.hpp"
 #include "machine_name.hpp"
 #include "directory.hpp"
+#include "remote_control.hpp"
+#include "local_dashboard.hpp"
 
 #include <array>
 #include <list>
@@ -190,6 +192,13 @@ void network_manager::start_server(const std::string& host, uint16_t port, const
     }
     _directory_stop = false;
     _directory_ready = false;
+    _beacon_stop = true;
+    if (_beacon_thread.joinable()) {
+        _beacon_thread.join();
+    }
+    _beacon_stop = false;
+    _client_count = 0;
+    local_dashboard::stop();
 
     _token = token;
     _machine_name.clear();
@@ -224,6 +233,12 @@ void network_manager::start_server(const std::string& host, uint16_t port, const
 
         // start tcp success
         spdlog::info("tcp listen success on {}", endpoint);
+    }
+
+    {
+        auto shown = _machine_name.empty() ? machine_name::local_name() : _machine_name;
+        local_dashboard::note(shown, 0);
+        local_dashboard::start();
     }
 
     {
@@ -317,6 +332,40 @@ void network_manager::start_server(const std::string& host, uint16_t port, const
         });
     }
 
+    _beacon_thread = std::thread([this] {
+        try {
+            asio::io_context ioc;
+            asio::ip::udp::socket socket(ioc);
+            socket.open(asio::ip::udp::v4());
+            socket.set_option(asio::ip::udp::socket::reuse_address(true));
+            socket.set_option(asio::socket_base::broadcast(true));
+            socket.bind({ asio::ip::address_v4::any(), 54530 });
+            socket.non_blocking(true);
+            while (!_beacon_stop) {
+                std::array<char, 8> query {};
+                asio::ip::udp::endpoint from;
+                asio::error_code ec;
+                while (!ec) {
+                    auto n = socket.receive_from(asio::buffer(query), from, 0, ec);
+                    if (ec || n < 4) {
+                        break;
+                    }
+                    if (std::string(query.data(), 4) == "ASQ1") {
+                        auto packet = announcement_packet();
+                        socket.send_to(asio::buffer(packet), from, 0, ec);
+                    }
+                }
+                auto packet = announcement_packet();
+                socket.send_to(asio::buffer(packet), { asio::ip::address_v4::broadcast(), 54530 }, 0, ec);
+                for (int i = 0; i < 20 && !_beacon_stop; ++i) {
+                    std::this_thread::sleep_for(100ms);
+                }
+            }
+        } catch (const std::exception& e) {
+            spdlog::warn("lan beacon stopped: {}", e.what());
+        }
+    });
+
     _net_thread = std::thread([self = shared_from_this()] {
         self->_ioc->run();
     });
@@ -331,6 +380,11 @@ void network_manager::stop_server()
         _directory_thread.join();
     }
     _directory_ready = false;
+    _beacon_stop = true;
+    if (_beacon_thread.joinable()) {
+        _beacon_thread.join();
+    }
+    local_dashboard::stop();
     if (_ioc) {
         _ioc->stop();
     }
@@ -490,6 +544,66 @@ asio::awaitable<void> network_manager::read_loop(std::shared_ptr<tcp_socket> pee
             if (it != _playing_peer_list.end()) {
                 it->second->last_tick = std::chrono::steady_clock::now();
             }
+        } else if (cmd == cmd_t::cmd_control) {
+            uint32_t action = 0;
+            uint32_t size = 0;
+            auto [action_ec, action_n] = co_await asio::async_read(*peer, asio::buffer(&action, sizeof(action)));
+            if (action_ec) {
+                close_session(peer);
+                break;
+            }
+            auto [size_ec, size_n] = co_await asio::async_read(*peer, asio::buffer(&size, sizeof(size)));
+            if (size_ec || size > 2048) {
+                close_session(peer);
+                break;
+            }
+            std::string payload(size, '\0');
+            if (size > 0) {
+                auto [payload_ec, payload_n] = co_await asio::async_read(*peer, asio::buffer(payload.data(), payload.size()));
+                if (payload_ec) {
+                    close_session(peer);
+                    break;
+                }
+            }
+            int32_t status = remote_control::run(action, payload) ? 0 : 1;
+            std::array<asio::const_buffer, 2> buffers = {
+                asio::buffer(&cmd, sizeof(cmd)),
+                asio::buffer(&status, sizeof(status)),
+            };
+            auto [write_ec, write_n] = co_await asio::async_write(*peer, buffers);
+            if (write_ec) {
+                close_session(peer);
+                break;
+            }
+        } else if (cmd == cmd_t::cmd_list_apps) {
+            auto labels = remote_control::shortcut_labels();
+            uint32_t count = (uint32_t)labels.size();
+            std::array<asio::const_buffer, 2> head = {
+                asio::buffer(&cmd, sizeof(cmd)),
+                asio::buffer(&count, sizeof(count)),
+            };
+            auto [write_ec, write_n] = co_await asio::async_write(*peer, head);
+            if (write_ec) {
+                close_session(peer);
+                break;
+            }
+            bool failed = false;
+            for (const auto& label : labels) {
+                uint32_t length = (uint32_t)label.size();
+                std::array<asio::const_buffer, 2> item = {
+                    asio::buffer(&length, sizeof(length)),
+                    asio::buffer(label),
+                };
+                auto [item_ec, item_n] = co_await asio::async_write(*peer, item);
+                if (item_ec) {
+                    close_session(peer);
+                    failed = true;
+                    break;
+                }
+            }
+            if (failed) {
+                break;
+            }
         } else {
             spdlog::error("{} error cmd", __func__);
             close_session(peer);
@@ -607,6 +721,8 @@ int network_manager::add_playing_peer(std::shared_ptr<tcp_socket>& peer)
     static int g_id = 0;
     info->id = ++g_id;
     info->last_tick = std::chrono::steady_clock::now();
+    _client_count++;
+    note_presence();
 
     spdlog::trace("{} add id:{} tcp://{}", __func__, info->id, peer->remote_endpoint());
     return info->id;
@@ -621,8 +737,32 @@ auto network_manager::remove_playing_peer(std::shared_ptr<tcp_socket>& peer) -> 
     }
 
     it = _playing_peer_list.erase(it);
+    if (_client_count > 0) {
+        _client_count--;
+    }
+    note_presence();
     spdlog::trace("{} remove tcp://{}", __func__, peer->remote_endpoint());
     return it;
+}
+
+std::string network_manager::announcement_packet() const
+{
+    auto name = _machine_name.empty() ? machine_name::local_name() : _machine_name;
+    std::string packet = "ASN1";
+    uint16_t port = _port;
+    uint16_t clients = (uint16_t)_client_count.load();
+    uint8_t flags = _token.empty() ? 0 : 1;
+    packet.append(reinterpret_cast<const char*>(&port), sizeof(port));
+    packet.append(reinterpret_cast<const char*>(&clients), sizeof(clients));
+    packet.push_back((char)flags);
+    packet += name;
+    return packet;
+}
+
+void network_manager::note_presence() const
+{
+    auto name = _machine_name.empty() ? machine_name::local_name() : _machine_name;
+    local_dashboard::note(name, _client_count.load());
 }
 
 void network_manager::fill_udp_peer(int id, asio::ip::udp::endpoint udp_peer, std::shared_ptr<udp_socket> socket)

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20.0)
 
 project(audio-share
-	VERSION 0.3.4
+	VERSION 0.4.1
 	HOMEPAGE_URL "https://github.com/mkckr0/audio-share"
 )
 
@@ -37,6 +37,8 @@ set(
 	"src/upnp_client.cpp"
 	"src/machine_name.cpp"
 	"src/directory.cpp"
+	"src/remote_control.cpp"
+	"src/local_dashboard.cpp"
 	"src/audio_manager.cpp"
 	"src/${PLATFORM_NAME}/audio_manager_impl.cpp"
 	${PROTO_SRCS}

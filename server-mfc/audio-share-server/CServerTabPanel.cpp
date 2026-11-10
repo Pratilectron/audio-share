@@ -8,6 +8,7 @@
 #include "network_manager.hpp"
 #include "machine_name.hpp"
 #include "AudioShareServer.h"
+#include <shellapi.h>
 
 // CServerTabPanel dialog
 
@@ -53,6 +54,7 @@ BEGIN_MESSAGE_MAP(CServerTabPanel, CTabPanel)
     ON_BN_CLICKED(IDC_BUTTON_SERVER, &CServerTabPanel::OnBnClickedStartServer)
     ON_BN_CLICKED(IDC_BUTTON_RESET, &CServerTabPanel::OnBnClickedButtonReset)
     ON_BN_CLICKED(IDC_BUTTON_SOUND_PANEL, &CServerTabPanel::OnBnClickedButtonSoundPanel)
+    ON_BN_CLICKED(IDC_BUTTON_DASHBOARD, &CServerTabPanel::OnBnClickedButtonDashboard)
 END_MESSAGE_MAP()
 
 
@@ -280,6 +282,7 @@ void CServerTabPanel::OnBnClickedStartServer()
         }
         theApp.WriteProfileInt(L"App", L"Running", true);
         m_bStarted = true;
+        ShellExecuteW(nullptr, L"open", L"http://127.0.0.1:65531/", nullptr, nullptr, SW_SHOWNORMAL);
     }
     else {
         // stop
@@ -317,6 +320,11 @@ void CServerTabPanel::EnableInputControls(bool bEnable)
     m_editToken.EnableWindow(bEnable);
 }
 
+
+void CServerTabPanel::OnBnClickedButtonDashboard()
+{
+    ShellExecuteW(nullptr, L"open", L"http://127.0.0.1:65531/", nullptr, nullptr, SW_SHOWNORMAL);
+}
 
 void CServerTabPanel::OnBnClickedButtonSoundPanel()
 {

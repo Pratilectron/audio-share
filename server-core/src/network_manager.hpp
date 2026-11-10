@@ -56,6 +56,8 @@ class network_manager : public std::enable_shared_from_this<network_manager>
         cmd_start_play = 2,
         cmd_heartbeat = 3,
         cmd_auth = 4,
+        cmd_control = 5,
+        cmd_list_apps = 6,
     };
 
 public:
@@ -98,6 +100,8 @@ private:
     int add_playing_peer(std::shared_ptr<tcp_socket>& peer);
     playing_peer_list_t::iterator remove_playing_peer(std::shared_ptr<tcp_socket>& peer);
     void fill_udp_peer(int id, asio::ip::udp::endpoint udp_peer, std::shared_ptr<udp_socket> socket);
+    std::string announcement_packet() const;
+    void note_presence() const;
 
 public:
     void broadcast_audio_data(const char* data, size_t count, int block_align);
@@ -117,6 +121,9 @@ private:
     std::atomic<bool> _directory_ready { false };
     std::thread _directory_thread;
     std::atomic<bool> _directory_stop { false };
+    std::thread _beacon_thread;
+    std::atomic<bool> _beacon_stop { false };
+    std::atomic<int> _client_count { 0 };
     uint16_t _port = 0;
     constexpr static auto _heartbeat_timeout = std::chrono::seconds(5);
 };

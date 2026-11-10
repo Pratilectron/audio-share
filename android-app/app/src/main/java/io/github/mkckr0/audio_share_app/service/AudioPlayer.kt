@@ -334,17 +334,8 @@ class AudioPlayer(val context: Context) : SimpleBasePlayer(Looper.getMainLooper(
     }
 
     private suspend fun playbackTarget(): Triple<String, Int, String> {
-        val networkConfig = context.networkConfigDataStore.data.first()
-        val host = networkConfig[stringPreferencesKey(NetworkConfigKeys.HOST)]
-            ?: context.getString(R.string.default_host)
-        val port = networkConfig[intPreferencesKey(NetworkConfigKeys.PORT)]
-            ?: context.getInteger(R.integer.default_port)
-        val token = networkConfig[stringPreferencesKey(NetworkConfigKeys.TOKEN)] ?: ""
-        if (MachineName.isName(host)) {
-            val endpoint = MachineName.resolve(host)
-            return Triple(endpoint.host, endpoint.port, MachineName.token(host))
-        }
-        return Triple(host, port, token)
+        val target = context.playbackTarget()
+        return Triple(target.host, target.port, target.token)
     }
 
     /**

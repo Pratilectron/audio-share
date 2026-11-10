@@ -33,6 +33,7 @@ protected:
 	afx_msg void OnBnClickedButtonReset();
 	afx_msg void OnBnClickedStartServer();
 	afx_msg void OnBnClickedButtonSoundPanel();
+	afx_msg void OnBnClickedButtonDashboard();
 	void EnableInputControls(bool bEnable = true);
 
 public:
