@@ -39,6 +39,10 @@ class network_manager : public std::enable_shared_from_this<network_manager>
     struct peer_info_t {
         int id = 0;
         asio::ip::udp::endpoint udp_peer;
+        // Socket the registration arrived on. Audio is sent back from the same
+        // socket so the source port matches the one the client used, which is
+        // what NATs on the client side expect.
+        std::shared_ptr<udp_socket> udp_socket;
         std::chrono::steady_clock::time_point last_tick;
     };
 
@@ -80,12 +84,12 @@ private:
     asio::awaitable<void> accept_tcp_loop(tcp_acceptor acceptor);
     asio::awaitable<void> read_loop(std::shared_ptr<tcp_socket> peer);
     asio::awaitable<void> heartbeat_loop(std::shared_ptr<tcp_socket> peer);
-    asio::awaitable<void> accept_udp_loop();
+    asio::awaitable<void> accept_udp_loop(std::shared_ptr<udp_socket> socket);
     
     playing_peer_list_t::iterator close_session(std::shared_ptr<tcp_socket>& peer);
     int add_playing_peer(std::shared_ptr<tcp_socket>& peer);
     playing_peer_list_t::iterator remove_playing_peer(std::shared_ptr<tcp_socket>& peer);
-    void fill_udp_peer(int id, asio::ip::udp::endpoint udp_peer);
+    void fill_udp_peer(int id, asio::ip::udp::endpoint udp_peer, std::shared_ptr<udp_socket> socket);
 
 public:
     void broadcast_audio_data(const char* data, size_t count, int block_align);
@@ -95,7 +99,7 @@ public:
 private:
     std::shared_ptr<audio_manager> _audio_manager;
     std::thread _net_thread;
-    std::unique_ptr<udp_socket> _udp_server;
+    std::vector<std::shared_ptr<udp_socket>> _udp_servers;
     playing_peer_list_t _playing_peer_list;
     std::string _token;
     std::string _external_endpoint;

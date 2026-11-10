@@ -205,7 +205,7 @@ class NetClient(val context: Context) {
             // audio data read loop
             scope.launch {
                 // Some routers forward only one rule per external port, so the
-                // server maps the UDP port to a free one below the TCP port.
+                // server also listens on the UDP ports below the TCP port.
                 // Register on every candidate a few times to survive packet loss.
                 for (attempt in 0 until 3) {
                     for (offset in 0 until 4) {

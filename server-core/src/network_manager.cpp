@@ -210,13 +210,35 @@ void network_manager::start_server(const std::string& host, uint16_t port, const
     }
 
     {
-        ip::udp::endpoint endpoint { ip::make_address(host), port };
-        _udp_server = std::make_unique<udp_socket>(*_ioc, endpoint.protocol());
-        _udp_server->bind(endpoint);
-        asio::co_spawn(*_ioc, accept_udp_loop(), asio::detached);
+        // In internet mode also listen on a few ports below the server port.
+        // Some routers keep a single rule per external port, so the UDP rule
+        // for the TCP port is refused; the client registers on all of them and
+        // the audio is sent back from the socket that received it, which keeps
+        // the source port identical to the port the client used.
+        std::vector<uint16_t> udp_ports { port };
+        if (enable_upnp) {
+            for (uint16_t offset = 1; offset < 4 && port > offset; ++offset) {
+                udp_ports.push_back((uint16_t)(port - offset));
+            }
+        }
 
-        // start udp success
-        spdlog::info("udp listen success on {}", endpoint);
+        for (size_t i = 0; i < udp_ports.size(); ++i) {
+            auto udp_port = udp_ports[i];
+            try {
+                ip::udp::endpoint endpoint { ip::make_address(host), udp_port };
+                auto socket = std::make_shared<udp_socket>(*_ioc, endpoint.protocol());
+                socket->bind(endpoint);
+                _udp_servers.push_back(socket);
+                asio::co_spawn(*_ioc, accept_udp_loop(socket), asio::detached);
+                spdlog::info("udp listen success on {}", endpoint);
+            } catch (const std::exception& e) {
+                if (i == 0) {
+                    // The server port itself must be available.
+                    throw;
+                }
+                spdlog::warn("udp listen on {} failed: {}", udp_port, e.what());
+            }
+        }
     }
 
     if (enable_upnp) {
@@ -266,7 +288,7 @@ void network_manager::stop_server()
     _net_thread.join();
     _audio_manager->stop();
     _playing_peer_list.clear();
-    _udp_server = nullptr;
+    _udp_servers.clear();
     _ioc = nullptr;
     if (_upnp_mapped) {
         upnp_client::unmap_port(_port);
@@ -469,18 +491,18 @@ asio::awaitable<void> network_manager::accept_tcp_loop(tcp_acceptor acceptor)
     }
 }
 
-asio::awaitable<void> network_manager::accept_udp_loop()
+asio::awaitable<void> network_manager::accept_udp_loop(std::shared_ptr<udp_socket> socket)
 {
     while (true) {
         int id = 0;
         ip::udp::endpoint udp_peer;
-        auto [ec, _] = co_await _udp_server->async_receive_from(asio::buffer(&id, sizeof(id)), udp_peer);
+        auto [ec, _] = co_await socket->async_receive_from(asio::buffer(&id, sizeof(id)), udp_peer);
         if (ec) {
             spdlog::info("{} {}", __func__, ec);
             co_return;
         }
 
-        fill_udp_peer(id, udp_peer);
+        fill_udp_peer(id, udp_peer, socket);
     }
 }
 
@@ -522,7 +544,7 @@ auto network_manager::remove_playing_peer(std::shared_ptr<tcp_socket>& peer) -> 
     return it;
 }
 
-void network_manager::fill_udp_peer(int id, asio::ip::udp::endpoint udp_peer)
+void network_manager::fill_udp_peer(int id, asio::ip::udp::endpoint udp_peer, std::shared_ptr<udp_socket> socket)
 {
     auto it = std::find_if(_playing_peer_list.begin(), _playing_peer_list.end(), [id](const playing_peer_list_t::value_type& e) {
         return e.second->id == id;
@@ -534,6 +556,7 @@ void network_manager::fill_udp_peer(int id, asio::ip::udp::endpoint udp_peer)
     }
 
     it->second->udp_peer = udp_peer;
+    it->second->udp_socket = socket;
     spdlog::info("{} fill udp peer id:{} tcp://{} udp://{}", __func__, id, it->first->remote_endpoint(), udp_peer);
 }
 
@@ -562,7 +585,12 @@ void network_manager::broadcast_audio_data(const char* data, size_t count, int b
     _ioc->post([seg_list = std::move(seg_list), self = shared_from_this()] {
         for (const auto& seg : seg_list) {
             for (auto& [peer, info] : self->_playing_peer_list) {
-                self->_udp_server->async_send_to(asio::buffer(*seg), info->udp_peer, [seg](const asio::error_code& ec, std::size_t bytes_transferred) { });
+                auto socket = info->udp_socket;
+                if (!socket) {
+                    // Not registered yet.
+                    continue;
+                }
+                socket->async_send_to(asio::buffer(*seg), info->udp_peer, [seg](const asio::error_code& ec, std::size_t bytes_transferred) { });
             }
         }
     });
