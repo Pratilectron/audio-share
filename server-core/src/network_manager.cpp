@@ -613,7 +613,9 @@ void network_manager::broadcast_audio_data(const char* data, size_t count, int b
         begin_pos += real_seg_size;
     }
 
-    _ioc->post([seg_list = std::move(seg_list), self = shared_from_this()] {
+    // asio::io_context::post() was removed in newer Asio. The free function
+    // is the supported way to queue work on the network thread.
+    asio::post(*_ioc, [seg_list = std::move(seg_list), self = shared_from_this()] {
         for (const auto& seg : seg_list) {
             for (auto& [peer, info] : self->_playing_peer_list) {
                 auto socket = info->udp_socket;
