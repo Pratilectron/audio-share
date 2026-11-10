@@ -46,6 +46,12 @@ struct service_info {
 // The gateway found by the last discovery, reused for removing the mapping.
 service_info g_service;
 bool g_has_service = false;
+std::vector<uint16_t> g_udp_ports;
+
+// Number of external UDP ports tried: the server port and the three below it.
+// Many routers keep a single rule per external port regardless of protocol, so
+// the UDP rule for the TCP port is usually rejected and the next free port wins.
+constexpr uint16_t udp_port_attempts = 4;
 
 std::string to_lower(std::string s)
 {
@@ -348,7 +354,9 @@ bool add_mapping(const service_info& info, uint16_t port, const std::string& int
     }
 
     if (body.find("<errorCode>") != std::string::npos) {
-        spdlog::debug("upnp AddPortMapping {} failed: {}", protocol, trim(find_between(body, "<errorDescription>", "</errorDescription>")));
+        spdlog::debug("upnp AddPortMapping {} failed ({}): {}", protocol,
+                      trim(find_between(body, "<errorCode>", "</errorCode>")),
+                      trim(find_between(body, "<errorDescription>", "</errorDescription>")));
         return false;
     }
     return true;
@@ -405,20 +413,27 @@ map_result map_port(uint16_t port, const std::string& internal_ip, const std::st
             continue;
         }
 
-        auto tcp_ok = add_mapping(info, port, internal_ip, description, "TCP");
-        auto udp_ok = add_mapping(info, port, internal_ip, description, "UDP");
-        if (!tcp_ok || !udp_ok) {
-            if (tcp_ok) {
-                delete_mapping(info, port, "TCP");
+        if (!add_mapping(info, port, internal_ip, description, "TCP")) {
+            continue;
+        }
+
+        std::vector<uint16_t> udp_ports;
+        for (uint16_t offset = 0; offset < udp_port_attempts && port > offset; ++offset) {
+            auto candidate = (uint16_t)(port - offset);
+            if (add_mapping(info, candidate, internal_ip, description, "UDP")) {
+                udp_ports.push_back(candidate);
             }
-            if (udp_ok) {
-                delete_mapping(info, port, "UDP");
-            }
+        }
+
+        if (udp_ports.empty()) {
+            delete_mapping(info, port, "TCP");
             continue;
         }
 
         g_service = info;
         g_has_service = true;
+        g_udp_ports = udp_ports;
+        result.udp_ports = udp_ports;
         result.external_ip = get_external_ip(info);
         result.success = true;
         if (result.external_ip.empty()) {
@@ -439,7 +454,10 @@ void unmap_port(uint16_t port)
         return;
     }
     delete_mapping(g_service, port, "TCP");
-    delete_mapping(g_service, port, "UDP");
+    for (auto udp_port : g_udp_ports) {
+        delete_mapping(g_service, udp_port, "UDP");
+    }
+    g_udp_ports.clear();
     g_has_service = false;
 }
 

@@ -89,6 +89,8 @@ as-cmd --bind=0.0.0.0:65530 --upnp --token=MYTOKEN
 ### If the router does not support UPnP
 Forward port `65530` (both TCP and UDP) to the PC's LAN address in the router settings, then use your public IP as the host. You can find the public IP on the server window or with a site such as <https://ifconfig.me>.
 
+Some routers keep a single rule per external port, so they refuse a UDP rule for the port the TCP rule already uses. For those, also forward UDP ports `65527` to `65530` to the PC's port `65530`; the app registers on all four and the first one that is forwarded is used.
+
 ### If your ISP uses CGNAT
 UPnP and port forwarding cannot work behind carrier-grade NAT. Use a VPN mesh instead, such as [Tailscale](https://tailscale.com/) or [ZeroTier](https://www.zerotier.com/), install it on the PC and the phone, and use the VPN address of the PC as the host.
 

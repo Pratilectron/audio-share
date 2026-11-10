@@ -58,6 +58,9 @@ public:
 
     static std::vector<std::string> get_address_list();
     static std::string get_default_address();
+    // Address of the interface used for outbound traffic (the one the router
+    // can reach), empty on failure.
+    static std::string get_primary_address();
 private:
     static std::string select_default_address(const std::vector<std::string>& address_list);
 

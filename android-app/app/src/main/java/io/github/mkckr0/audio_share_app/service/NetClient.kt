@@ -204,7 +204,20 @@ class NetClient(val context: Context) {
 
             // audio data read loop
             scope.launch {
-                udpSocket.writeIntLE(id, InetSocketAddress(host, port))
+                // Some routers forward only one rule per external port, so the
+                // server maps the UDP port to a free one below the TCP port.
+                // Register on every candidate a few times to survive packet loss.
+                for (attempt in 0 until 3) {
+                    for (offset in 0 until 4) {
+                        val udpPort = port - offset
+                        if (udpPort > 0) {
+                            udpSocket.writeIntLE(id, InetSocketAddress(host, udpPort))
+                        }
+                    }
+                    if (attempt < 2) {
+                        delay(200)
+                    }
+                }
 //                udpSocket.writeIntLE(id)
                 while (true) {
                     val buf = udpSocket.readByteBuffer()

@@ -132,6 +132,19 @@ std::string network_manager::get_default_address()
     return select_default_address(get_address_list());
 }
 
+std::string network_manager::get_primary_address()
+{
+    try {
+        asio::io_context ioc;
+        asio::ip::udp::socket socket(ioc);
+        socket.open(asio::ip::udp::v4());
+        socket.connect(asio::ip::udp::endpoint(asio::ip::make_address_v4("8.8.8.8"), 53));
+        return socket.local_endpoint().address().to_string();
+    } catch (const std::exception&) {
+        return {};
+    }
+}
+
 std::string network_manager::select_default_address(const std::vector<std::string>& address_list)
 {
     if (address_list.empty()) {
@@ -208,12 +221,16 @@ void network_manager::start_server(const std::string& host, uint16_t port, const
     if (enable_upnp) {
         auto internal_ip = host;
         if (internal_ip == "0.0.0.0" || internal_ip == "::") {
-            internal_ip = get_default_address();
+            internal_ip = get_primary_address();
+            if (internal_ip.empty()) {
+                internal_ip = get_default_address();
+            }
         }
 
         auto result = upnp_client::map_port(port, internal_ip, "Audio Share");
         if (result.success) {
             _upnp_mapped = true;
+            spdlog::info("upnp forwarded tcp {} and udp {}", port, fmt::join(result.udp_ports, ", "));
             if (!result.external_ip.empty()) {
                 _external_endpoint = fmt::format("{}:{}", result.external_ip, port);
                 spdlog::info("upnp port forwarding success, public endpoint {}", _external_endpoint);

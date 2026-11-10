@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 // Minimal UPnP IGD (Internet Gateway Device) client.
 //
@@ -31,6 +32,10 @@ namespace upnp_client {
 struct map_result {
     bool success = false;
     std::string external_ip;
+    // External UDP ports that were forwarded to the server port. Some routers
+    // accept only one rule per external port, so these can differ from the
+    // TCP port and from each other.
+    std::vector<uint16_t> udp_ports;
     std::string error;
 };
 

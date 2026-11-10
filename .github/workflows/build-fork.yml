@@ -21,6 +21,11 @@ jobs:
         with:
           vcpkgGitCommitId: 10b7a178346f3f0abef60cecd5130e295afd8da4
 
+      # The runner no longer exposes ACTIONS_RUNTIME_TOKEN to later steps, so the
+      # x-gha binary cache set up by run-vcpkg makes every install fail. Disable it.
+      - run: echo "VCPKG_BINARY_SOURCES=clear" >> $env:GITHUB_ENV
+        shell: pwsh
+
       - run: vcpkg integrate install
 
       - run: vcpkg install asio protobuf spdlog[wchar] wil nlohmann-json
