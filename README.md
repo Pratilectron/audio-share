@@ -73,21 +73,18 @@ Audio Share can share Windows/Linux computer's audio to Android phone over netwo
 The original project is designed for a LAN. This fork adds an "internet mode" so the phone can reach the PC from another network.
 
 ### Windows GUI
-1. Type a token (or leave it empty, one is generated for you).
-2. Tick **Internet mode (auto port forwarding)** and click **Start Server**.
-3. The server binds every interface, asks the router to forward TCP and UDP port `65530` with UPnP, and shows the public address and token at the bottom of the window, for example:
-   `Internet: 203.0.113.7:65530    Token: K7Q2M9XA`
-4. On the phone, enter that public address as **Host**, `65530` as **Port**, and the token. Tap **▶**.
+1. Tick **Internet mode (auto port forwarding)** and click **Start Server**.
+2. The window shows a name calculated from this PC, for example `brisk-otter-k7qm92xp`. That name stays the same if you delete the app and open it again. The PC updates the address behind the name when its public address changes.
+3. On the phone, type that name in **Name**. Leave the token empty. Tap **▶**.
 
 ### Command line
 ```sh
 as-cmd --bind=0.0.0.0:65530 --upnp
-as-cmd --bind=0.0.0.0:65530 --upnp --token=MYTOKEN
 ```
-`--upnp` generates a random token when `--token` is not given and prints the public endpoint in the log.
+`--upnp` prints the machine name and registers it. A `--token` you pass is replaced by the token calculated from that name.
 
 ### If the router does not support UPnP
-Forward port `65530` (TCP) to the PC's port `65530`, and the UDP ports `65530`, `65529`, `65528` and `65527` to the PC's same ports. Then use your public IP as the host. You can find the public IP on the server window or with a site such as <https://ifconfig.me>.
+Forward port `65530` (TCP) to the PC's port `65530`, and the UDP ports `65530`, `65529`, `65528` and `65527` to the PC's same ports. The phone still connects with the name. The PC publishes the public address for that name on its own.
 
 The UDP ports are needed because many routers keep a single rule per external port, so they refuse a UDP rule for the port the TCP rule already uses. The app registers on all four UDP ports and the server answers from the one that received the registration, which also keeps NAT on the phone's side happy.
 
@@ -95,7 +92,8 @@ The UDP ports are needed because many routers keep a single rule per external po
 UPnP and port forwarding cannot work behind carrier-grade NAT. Use a VPN mesh instead, such as [Tailscale](https://tailscale.com/) or [ZeroTier](https://www.zerotier.com/), install it on the PC and the phone, and use the VPN address of the PC as the host.
 
 ### Security
-- With internet mode the server refuses every client that does not send the token first. Keep the token secret and change it if it leaks.
+- With internet mode the server refuses every client that does not know the PC's name. The name is the secret. Anyone who has it can listen.
+- The name is looked up through `ntfy.sh`, which learns the PC's current public address but not the audio. The audio itself is still sent directly.
 - The protocol is **not encrypted**: the token and the PCM audio travel in clear text. Do not use this on untrusted networks if the audio is sensitive; a VPN (Tailscale/ZeroTier/WireGuard) adds encryption.
 - The phone app of this fork is required for the token handshake. The official app still works with the server when no token is configured.
 

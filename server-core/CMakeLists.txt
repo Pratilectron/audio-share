@@ -35,6 +35,8 @@ set(
 	lib_src_list
 	"src/network_manager.cpp"
 	"src/upnp_client.cpp"
+	"src/machine_name.cpp"
+	"src/directory.cpp"
 	"src/audio_manager.cpp"
 	"src/${PLATFORM_NAME}/audio_manager_impl.cpp"
 	${PROTO_SRCS}

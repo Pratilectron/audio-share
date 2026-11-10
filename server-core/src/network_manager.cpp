@@ -18,6 +18,8 @@
 #include "formatter.hpp"
 #include "audio_manager.hpp"
 #include "upnp_client.hpp"
+#include "machine_name.hpp"
+#include "directory.hpp"
 
 #include <array>
 #include <list>
@@ -182,17 +184,30 @@ std::string network_manager::select_default_address(const std::vector<std::strin
 void network_manager::start_server(const std::string& host, uint16_t port, const audio_manager::capture_config& capture_config,
                                    const std::string& token, bool enable_upnp)
 {
+    _directory_stop = true;
+    if (_directory_thread.joinable()) {
+        _directory_thread.join();
+    }
+    _directory_stop = false;
+    _directory_ready = false;
+
     _token = token;
+    _machine_name.clear();
     _port = port;
     _external_endpoint.clear();
     _upnp_note.clear();
     _upnp_mapped = false;
     _udp_servers.clear();
 
-    if (enable_upnp && _token.empty()) {
-        // Exposing the server to the internet without a token would let anyone
-        // who finds the port listen to the captured audio.
-        _token = generate_token();
+    if (enable_upnp) {
+        // The name and the token are a function of this computer, so deleting
+        // the app and opening it again produces the same name.
+        _machine_name = machine_name::local_name();
+        if (!_machine_name.empty()) {
+            _token = machine_name::token_for(_machine_name);
+        } else if (_token.empty()) {
+            _token = generate_token();
+        }
     }
 
     _ioc = std::make_shared<asio::io_context>();
@@ -275,11 +290,31 @@ void network_manager::start_server(const std::string& host, uint16_t port, const
         }
     }
 
-    if (!_token.empty()) {
+    if (!_machine_name.empty()) {
+        spdlog::info("machine name: {}", _machine_name);
+    }
+    if (!_token.empty() && _machine_name.empty()) {
         spdlog::info("authentication token: {}", _token);
-        if (!_external_endpoint.empty()) {
-            spdlog::info("connect from the internet with host {} and token {}", _external_endpoint, _token);
+    }
+
+    if (enable_upnp && !_machine_name.empty() && !_external_endpoint.empty()) {
+        _directory_ready = directory::publish(_machine_name, _external_endpoint);
+        if (_directory_ready) {
+            spdlog::info("name {} is online", _machine_name);
+        } else {
+            spdlog::warn("could not register name {}", _machine_name);
         }
+        _directory_thread = std::thread([self = shared_from_this()] {
+            while (!self->_directory_stop) {
+                for (int second = 0; second < 15 * 60 && !self->_directory_stop; ++second) {
+                    std::this_thread::sleep_for(1s);
+                }
+                if (self->_directory_stop) {
+                    break;
+                }
+                self->_directory_ready = directory::publish(self->_machine_name, self->_external_endpoint);
+            }
+        });
     }
 
     _net_thread = std::thread([self = shared_from_this()] {
@@ -291,6 +326,11 @@ void network_manager::start_server(const std::string& host, uint16_t port, const
 
 void network_manager::stop_server()
 {
+    _directory_stop = true;
+    if (_directory_thread.joinable()) {
+        _directory_thread.join();
+    }
+    _directory_ready = false;
     if (_ioc) {
         _ioc->stop();
     }
@@ -321,6 +361,16 @@ std::string network_manager::get_upnp_note() const
 std::string network_manager::get_token() const
 {
     return _token;
+}
+
+std::string network_manager::get_machine_name() const
+{
+    return _machine_name;
+}
+
+bool network_manager::directory_ready() const
+{
+    return _directory_ready;
 }
 
 void network_manager::wait_server()

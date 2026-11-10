@@ -6,6 +6,7 @@
 #include "resource.h"
 #include "audio_manager.hpp"
 #include "network_manager.hpp"
+#include "machine_name.hpp"
 #include "AudioShareServer.h"
 
 // CServerTabPanel dialog
@@ -64,6 +65,7 @@ BOOL CServerTabPanel::OnInitDialog()
     // TODO:  Add extra initialization here
     m_editPort.SetLimitText(5);
     m_editToken.SetLimitText(64);
+    m_editToken.SetReadOnly(TRUE);
 
     // init controls data
     this->OnBnClickedButtonReset();
@@ -104,8 +106,15 @@ void CServerTabPanel::OnBnClickedButtonReset()
     // internet mode
     {
         m_checkInternet.SetCheck(theApp.GetProfileIntW(L"Internet", L"enabled", 0) ? BST_CHECKED : BST_UNCHECKED);
-        m_editToken.SetWindowTextW(theApp.GetProfileStringW(L"Internet", L"token", L""));
-        m_staticInternet.SetWindowTextW(L"");
+        auto name = machine_name::local_name();
+        m_editToken.SetWindowTextW(mbs_to_wchars(name).c_str());
+        if (!name.empty()) {
+            CString info;
+            info.Format(L"Name: %s", mbs_to_wchars(name).c_str());
+            m_staticInternet.SetWindowTextW(info);
+        } else {
+            m_staticInternet.SetWindowTextW(L"");
+        }
     }
 
     CString defaultString;
@@ -198,22 +207,22 @@ void CServerTabPanel::OnBnClickedStartServer()
 
         bool internet = m_checkInternet.GetCheck() == BST_CHECKED;
 
-        CString host_str, port_str, token_str;
+        CString host_str, port_str;
         m_comboBoxHost.GetWindowTextW(host_str);
         m_editPort.GetWindowTextW(port_str);
-        m_editToken.GetWindowTextW(token_str);
         std::string host = wchars_to_mbs(host_str.GetString());
         if (internet) {
             // Listen on every interface so the router can forward the port.
             host = "0.0.0.0";
         }
         std::uint16_t port = std::stoi(wchars_to_mbs(port_str.GetString()));
-        std::string token = wchars_to_mbs(token_str.GetString());
+        // Internet mode calculates the name and the token from this PC.
+        // The name box is only there so it can be copied.
         audio_manager::capture_config config;
         config.endpoint_id = wchars_to_mbs((LPCWSTR)m_comboBoxAudioEndpoint.GetItemDataPtr(m_comboBoxAudioEndpoint.GetCurSel()));
         config.encoding = (audio_manager::encoding_t)m_comboEncoding.GetItemData(m_comboEncoding.GetCurSel());
         try {
-            m_network_manager->start_server(host, port, config, token, internet);
+            m_network_manager->start_server(host, port, config, {}, internet);
         }
         catch (std::exception& e) {
             AfxMessageBox(CString(e.what()), MB_OK | MB_ICONSTOP);
@@ -237,29 +246,37 @@ void CServerTabPanel::OnBnClickedStartServer()
         theApp.WriteProfileInt(L"Capture", L"encoding", (int)config.encoding);
         theApp.WriteProfileInt(L"Internet", L"enabled", internet);
         if (internet) {
-            // The core generates a token when the field was left empty, keep it.
-            auto used_token = m_network_manager->get_token();
-            auto external_endpoint = m_network_manager->get_external_endpoint();
-            m_editToken.SetWindowTextW(mbs_to_wchars(used_token).c_str());
-            theApp.WriteProfileStringW(L"Internet", L"token", mbs_to_wchars(used_token).c_str());
+            auto name = m_network_manager->get_machine_name();
+            m_editToken.SetWindowTextW(mbs_to_wchars(name).c_str());
+            theApp.WriteProfileStringW(L"Internet", L"token", mbs_to_wchars(name).c_str());
 
             CString info;
-            if (!external_endpoint.empty()) {
-                info.Format(L"Internet: %s    Token: %s",
-                            mbs_to_wchars(external_endpoint).c_str(),
-                            mbs_to_wchars(used_token).c_str());
+            if (!name.empty() && m_network_manager->directory_ready()) {
+                info.Format(L"Name: %s", mbs_to_wchars(name).c_str());
+            } else if (!name.empty()) {
+                info.Format(L"Name: %s\r\nThe name is not online yet. Check that this PC can reach the internet.",
+                            mbs_to_wchars(name).c_str());
             } else {
-                info = L"Internet: UPnP port forwarding failed, forward the port on your router manually";
+                info = L"Internet: this PC has no machine id, so it has no name";
             }
             auto note = m_network_manager->get_upnp_note();
-            if (!note.empty()) {
+            if (m_network_manager->get_external_endpoint().empty()) {
+                info += L"\r\nUPnP port forwarding failed. Forward the port on your router.";
+            } else if (!note.empty()) {
                 info += L"\r\n";
                 info += mbs_to_wchars(note).c_str();
             }
             m_staticInternet.SetWindowTextW(info);
         } else {
-            theApp.WriteProfileStringW(L"Internet", L"token", token_str);
-            m_staticInternet.SetWindowTextW(L"");
+            theApp.WriteProfileStringW(L"Internet", L"token", L"");
+            auto name = machine_name::local_name();
+            if (!name.empty()) {
+                CString info;
+                info.Format(L"Name: %s", mbs_to_wchars(name).c_str());
+                m_staticInternet.SetWindowTextW(info);
+            } else {
+                m_staticInternet.SetWindowTextW(L"");
+            }
         }
         theApp.WriteProfileInt(L"App", L"Running", true);
         m_bStarted = true;
@@ -276,7 +293,14 @@ void CServerTabPanel::OnBnClickedStartServer()
         m_buttonServer.SetWindowTextW(s);
         m_buttonServer.SetFocus();
         theApp.WriteProfileInt(L"App", L"Running", false);
-        m_staticInternet.SetWindowTextW(L"");
+        auto name = machine_name::local_name();
+        if (!name.empty()) {
+            CString info;
+            info.Format(L"Name: %s", mbs_to_wchars(name).c_str());
+            m_staticInternet.SetWindowTextW(info);
+        } else {
+            m_staticInternet.SetWindowTextW(L"");
+        }
         m_bStarted = false;
     }
 }

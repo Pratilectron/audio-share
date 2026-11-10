@@ -5,9 +5,10 @@
     <string name="label_audio">Audio</string>
     <string name="label_settings">Settings</string>
     <!-- Home Screen -->
-    <string name="label_host">Host</string>
+    <string name="label_host">Name</string>
+    <string name="label_name_offline">This name is not online. Start the PC with Internet mode on.</string>
     <string name="label_port">Port</string>
-    <string name="label_token">Token (optional)</string>
+    <string name="label_token">Token (leave empty for a name)</string>
     <!-- Audio Screen -->
     <string name="label_audio_track">Audio Track</string>
     <string name="label_volume_linear_gain">Volume(Linear Gain)</string>

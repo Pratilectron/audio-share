@@ -102,12 +102,17 @@ class AudioPlayer(val context: Context) : SimpleBasePlayer(Looper.getMainLooper(
             Log.d(tag, "handleSetPlayWhenReady playWhenReady=$playWhenReady")
             _state = state.buildUpon().setPlayerError(null).build()
             if (playWhenReady) {
-                val networkConfig = context.networkConfigDataStore.data.first()
-                val host = networkConfig[stringPreferencesKey(NetworkConfigKeys.HOST)]
-                    ?: context.getString(R.string.default_host)
-                val port = networkConfig[intPreferencesKey(NetworkConfigKeys.PORT)]
-                    ?: context.getInteger(R.integer.default_port)
-                val token = networkConfig[stringPreferencesKey(NetworkConfigKeys.TOKEN)] ?: ""
+                val (host, port, token) = try {
+                    playbackTarget()
+                } catch (e: Exception) {
+                    message = e.message ?: context.getString(R.string.label_name_offline)
+                    _state = state.buildUpon()
+                        .setPlayWhenReady(false, PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+                        .setPlaybackState(STATE_IDLE)
+                        .build()
+                    invalidateState()
+                    return@future
+                }
 
                 val mediaItem = MediaItem.fromUri("tcp://$host:$port").buildUpon()
                     .setMediaMetadata(
@@ -312,12 +317,12 @@ class AudioPlayer(val context: Context) : SimpleBasePlayer(Looper.getMainLooper(
                     .build()
                 invalidateState()
 
-                val networkConfig = context.networkConfigDataStore.data.first()
-                val host = networkConfig[stringPreferencesKey(NetworkConfigKeys.HOST)]
-                    ?: context.getString(R.string.default_host)
-                val port = networkConfig[intPreferencesKey(NetworkConfigKeys.PORT)]
-                    ?: context.getInteger(R.integer.default_port)
-                val token = networkConfig[stringPreferencesKey(NetworkConfigKeys.TOKEN)] ?: ""
+                val (host, port, token) = try {
+                    playbackTarget()
+                } catch (e: Exception) {
+                    AudioPlayer.message = e.message ?: context.getString(R.string.label_name_offline)
+                    return@launch
+                }
                 netClient.start(
                     host = host,
                     port = port,
@@ -326,6 +331,20 @@ class AudioPlayer(val context: Context) : SimpleBasePlayer(Looper.getMainLooper(
                 )
             }
         }
+    }
+
+    private suspend fun playbackTarget(): Triple<String, Int, String> {
+        val networkConfig = context.networkConfigDataStore.data.first()
+        val host = networkConfig[stringPreferencesKey(NetworkConfigKeys.HOST)]
+            ?: context.getString(R.string.default_host)
+        val port = networkConfig[intPreferencesKey(NetworkConfigKeys.PORT)]
+            ?: context.getInteger(R.integer.default_port)
+        val token = networkConfig[stringPreferencesKey(NetworkConfigKeys.TOKEN)] ?: ""
+        if (MachineName.isName(host)) {
+            val endpoint = MachineName.resolve(host)
+            return Triple(endpoint.host, endpoint.port, MachineName.token(host))
+        }
+        return Triple(host, port, token)
     }
 
     /**

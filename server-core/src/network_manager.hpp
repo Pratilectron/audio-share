@@ -17,7 +17,9 @@
 #ifndef NETWORK_MANAGER_HPP
 #define NETWORK_MANAGER_HPP
 
+#include <atomic>
 #include <memory>
+#include <thread>
 #include <vector>
 #include <string>
 #include <map>
@@ -81,6 +83,10 @@ public:
     std::string get_upnp_note() const;
     // Token clients must send when authentication is enabled, empty otherwise.
     std::string get_token() const;
+    // Stable name calculated from this computer. Empty outside internet mode.
+    std::string get_machine_name() const;
+    // The name is published, so a phone can look it up.
+    bool directory_ready() const;
 
 private:
     asio::awaitable<void> accept_tcp_loop(tcp_acceptor acceptor);
@@ -104,9 +110,13 @@ private:
     std::vector<std::shared_ptr<udp_socket>> _udp_servers;
     playing_peer_list_t _playing_peer_list;
     std::string _token;
+    std::string _machine_name;
     std::string _external_endpoint;
     std::string _upnp_note;
     bool _upnp_mapped = false;
+    std::atomic<bool> _directory_ready { false };
+    std::thread _directory_thread;
+    std::atomic<bool> _directory_stop { false };
     uint16_t _port = 0;
     constexpr static auto _heartbeat_timeout = std::chrono::seconds(5);
 };
