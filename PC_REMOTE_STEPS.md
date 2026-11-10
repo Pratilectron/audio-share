@@ -10,7 +10,9 @@
 7. **Phone UI + ship** — Remote tab with touchpad, keyboard, files, tasks, camera. Wire cmds 7–12. Full regression. Push to GitHub.
 
 ### Step status
-1–7 ✅ (unit tests 1–6 PASS; Android `:app:assembleDebug` PASS; MSVC local toolset missing MFC — CI `build-fork` builds the exe)
+1–7 ✅ shipped (`f09f0d7` on `origin/main`)
+- Unit tests 1–6 PASS; Android `:app:assembleDebug` PASS
+- Local MSVC lacks MFC; CI `build-fork` produces `AudioShareServer.exe`)
 
 ### Network commands (after auth)
 | Cmd | Id | Purpose |
