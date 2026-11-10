@@ -22,6 +22,8 @@
 #include "directory.hpp"
 #include "remote_control.hpp"
 #include "local_dashboard.hpp"
+#include "pc_remote.hpp"
+#include "session_crypto.hpp"
 
 #include <array>
 #include <list>
@@ -553,17 +555,35 @@ asio::awaitable<void> network_manager::read_loop(std::shared_ptr<tcp_socket> pee
                 break;
             }
             auto [size_ec, size_n] = co_await asio::async_read(*peer, asio::buffer(&size, sizeof(size)));
-            if (size_ec || size > 2048) {
+            if (size_ec || size > 256 * 1024) {
                 close_session(peer);
                 break;
             }
-            std::string payload(size, '\0');
+            std::vector<uint8_t> body(size);
             if (size > 0) {
-                auto [payload_ec, payload_n] = co_await asio::async_read(*peer, asio::buffer(payload.data(), payload.size()));
+                auto [payload_ec, payload_n] = co_await asio::async_read(*peer, asio::buffer(body.data(), body.size()));
                 if (payload_ec) {
                     close_session(peer);
                     break;
                 }
+            }
+            std::string payload;
+            if (!_token.empty() && !body.empty()) {
+                auto key = session_crypto::derive_key(_token);
+                std::string crypto_error;
+                if (!session_crypto::open(key, body, payload, crypto_error)) {
+                    spdlog::warn("control decrypt failed from {}: {}", peer->remote_endpoint(), crypto_error);
+                    int32_t status = 2;
+                    std::array<asio::const_buffer, 2> buffers = {
+                        asio::buffer(&cmd, sizeof(cmd)),
+                        asio::buffer(&status, sizeof(status)),
+                    };
+                    co_await asio::async_write(*peer, buffers);
+                    close_session(peer);
+                    break;
+                }
+            } else {
+                payload.assign(reinterpret_cast<const char*>(body.data()), body.size());
             }
             int32_t status = remote_control::run(action, payload) ? 0 : 1;
             std::array<asio::const_buffer, 2> buffers = {
@@ -602,6 +622,146 @@ asio::awaitable<void> network_manager::read_loop(std::shared_ptr<tcp_socket> pee
                 }
             }
             if (failed) {
+                break;
+            }
+        } else if (cmd == cmd_t::cmd_fs_list || cmd == cmd_t::cmd_fs_get || cmd == cmd_t::cmd_fs_put
+                   || cmd == cmd_t::cmd_stats || cmd == cmd_t::cmd_end_process || cmd == cmd_t::cmd_camera) {
+            uint32_t size = 0;
+            auto [size_ec, size_n] = co_await asio::async_read(*peer, asio::buffer(&size, sizeof(size)));
+            if (size_ec || size > 8 * 1024 * 1024) {
+                close_session(peer);
+                break;
+            }
+            std::vector<uint8_t> body(size);
+            if (size > 0) {
+                auto [body_ec, body_n] = co_await asio::async_read(*peer, asio::buffer(body.data(), body.size()));
+                if (body_ec) {
+                    close_session(peer);
+                    break;
+                }
+            }
+            std::string request;
+            if (!_token.empty() && !body.empty()) {
+                auto key = session_crypto::derive_key(_token);
+                std::string crypto_error;
+                if (!session_crypto::open(key, body, request, crypto_error)) {
+                    int32_t status = 2;
+                    std::array<asio::const_buffer, 2> buffers = {
+                        asio::buffer(&cmd, sizeof(cmd)),
+                        asio::buffer(&status, sizeof(status)),
+                    };
+                    co_await asio::async_write(*peer, buffers);
+                    close_session(peer);
+                    break;
+                }
+            } else {
+                request.assign(reinterpret_cast<const char*>(body.data()), body.size());
+            }
+
+            int32_t status = 0;
+            std::vector<uint8_t> reply;
+            std::string remote_error;
+            if (cmd == cmd_t::cmd_fs_list) {
+                std::vector<pc_remote::dir_entry> entries;
+                if (!pc_remote::list_dir(request, entries, remote_error)) {
+                    status = 1;
+                } else {
+                    reply.reserve(entries.size() * 64);
+                    auto push_u32 = [&](uint32_t v) {
+                        reply.push_back((uint8_t)(v & 0xff));
+                        reply.push_back((uint8_t)((v >> 8) & 0xff));
+                        reply.push_back((uint8_t)((v >> 16) & 0xff));
+                        reply.push_back((uint8_t)((v >> 24) & 0xff));
+                    };
+                    auto push_u64 = [&](uint64_t v) {
+                        for (int i = 0; i < 8; ++i) {
+                            reply.push_back((uint8_t)((v >> (8 * i)) & 0xff));
+                        }
+                    };
+                    push_u32((uint32_t)entries.size());
+                    for (const auto& entry : entries) {
+                        push_u32((uint32_t)entry.name.size());
+                        reply.insert(reply.end(), entry.name.begin(), entry.name.end());
+                        reply.push_back(entry.directory ? 1 : 0);
+                        push_u64(entry.bytes);
+                    }
+                }
+            } else if (cmd == cmd_t::cmd_fs_get) {
+                if (!pc_remote::read_file(request, reply, remote_error)) {
+                    status = 1;
+                    reply.clear();
+                }
+            } else if (cmd == cmd_t::cmd_fs_put) {
+                if (request.size() < 4) {
+                    status = 1;
+                } else {
+                    uint32_t path_len = (uint8_t)request[0] | ((uint8_t)request[1] << 8)
+                        | ((uint8_t)request[2] << 16) | ((uint8_t)request[3] << 24);
+                    if (path_len > request.size() - 4) {
+                        status = 1;
+                    } else {
+                        std::string path = request.substr(4, path_len);
+                        const uint8_t* data = reinterpret_cast<const uint8_t*>(request.data() + 4 + path_len);
+                        size_t data_len = request.size() - 4 - path_len;
+                        if (!pc_remote::write_file(path, data, data_len, remote_error)) {
+                            status = 1;
+                        }
+                    }
+                }
+            } else if (cmd == cmd_t::cmd_stats) {
+                auto stats = pc_remote::sample_stats();
+                auto push_u32 = [&](uint32_t v) {
+                    reply.push_back((uint8_t)(v & 0xff));
+                    reply.push_back((uint8_t)((v >> 8) & 0xff));
+                    reply.push_back((uint8_t)((v >> 16) & 0xff));
+                    reply.push_back((uint8_t)((v >> 24) & 0xff));
+                };
+                push_u32(stats.cpu_percent);
+                push_u32(stats.memory_used_mb);
+                push_u32(stats.memory_total_mb);
+                push_u32((uint32_t)stats.processes.size());
+                for (const auto& row : stats.processes) {
+                    push_u32(row.pid);
+                    push_u32(row.memory_mb);
+                    push_u32((uint32_t)row.name.size());
+                    reply.insert(reply.end(), row.name.begin(), row.name.end());
+                }
+            } else if (cmd == cmd_t::cmd_end_process) {
+                if (request.size() < 4) {
+                    status = 1;
+                } else {
+                    uint32_t pid = (uint8_t)request[0] | ((uint8_t)request[1] << 8)
+                        | ((uint8_t)request[2] << 16) | ((uint8_t)request[3] << 24);
+                    if (!pc_remote::end_process(pid, remote_error)) {
+                        status = 1;
+                    }
+                }
+            } else if (cmd == cmd_t::cmd_camera) {
+                if (!pc_remote::capture_jpeg(reply, remote_error)) {
+                    status = 1;
+                    reply.clear();
+                }
+            }
+
+            std::vector<uint8_t> out = reply;
+            if (!_token.empty() && !reply.empty()) {
+                auto key = session_crypto::derive_key(_token);
+                std::string crypto_error;
+                if (!session_crypto::seal(key, reply.data(), reply.size(), out, crypto_error)) {
+                    status = 2;
+                    out.clear();
+                }
+            }
+            uint32_t out_size = (uint32_t)out.size();
+            std::array<asio::const_buffer, 4> buffers = {
+                asio::buffer(&cmd, sizeof(cmd)),
+                asio::buffer(&status, sizeof(status)),
+                asio::buffer(&out_size, sizeof(out_size)),
+                asio::buffer(out),
+            };
+            auto [write_ec, write_n] = co_await asio::async_write(*peer, buffers);
+            if (write_ec) {
+                close_session(peer);
                 break;
             }
         } else {

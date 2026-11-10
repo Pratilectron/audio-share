@@ -58,6 +58,12 @@ class network_manager : public std::enable_shared_from_this<network_manager>
         cmd_auth = 4,
         cmd_control = 5,
         cmd_list_apps = 6,
+        cmd_fs_list = 7,
+        cmd_fs_get = 8,
+        cmd_fs_put = 9,
+        cmd_stats = 10,
+        cmd_end_process = 11,
+        cmd_camera = 12,
     };
 
 public:

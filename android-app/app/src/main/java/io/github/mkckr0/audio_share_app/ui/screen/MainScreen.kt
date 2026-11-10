@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -55,6 +56,9 @@ sealed class Route {
 
     @Serializable
     data object Settings : Route()
+
+    @Serializable
+    data object Remote : Route()
 }
 
 data class TopLevelRoute(val label: String, val icon: ImageVector, val route: Route)
@@ -64,6 +68,7 @@ fun MainScreen() {
     val context = LocalContext.current
     val topLevelRoutes = listOf(
         TopLevelRoute(context.getString(R.string.label_home), Icons.Default.Home, Route.Home),
+        TopLevelRoute(context.getString(R.string.label_remote), Icons.Default.TouchApp, Route.Remote),
         TopLevelRoute(context.getString(R.string.label_audio), Icons.Default.Audiotrack, Route.Audio),
         TopLevelRoute(context.getString(R.string.label_settings), Icons.Default.Settings, Route.Settings),
     )
@@ -102,6 +107,7 @@ fun MainScreen() {
             exitTransition = { fadeOut(animationSpec = tween(100)) },
         ) {
             composable<Route.Home> { HomeScreen() }
+            composable<Route.Remote> { RemoteScreen() }
             composable<Route.Audio> { AudioScreen() }
             composable<Route.Settings> { SettingsScreen() }
         }

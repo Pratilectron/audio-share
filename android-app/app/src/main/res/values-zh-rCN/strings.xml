@@ -2,6 +2,7 @@
 <resources>
     <!-- Main Screen -->
     <string name="label_home">首页</string>
+    <string name="label_remote">遥控</string>
     <string name="label_audio">音频</string>
     <string name="label_settings">设置</string>
     <!-- Home Screen -->

@@ -9,6 +9,7 @@
 */
 
 #include "remote_control.hpp"
+#include "pc_remote.hpp"
 
 #include <fstream>
 #include <mutex>
@@ -137,7 +138,7 @@ bool run(uint32_t action, const std::string& payload)
         return false;
     }
     default:
-        return false;
+        return pc_remote::dispatch(action, payload);
     }
 #else
     (void)action;

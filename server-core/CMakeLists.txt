@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20.0)
 
 project(audio-share
-	VERSION 0.4.1
+	VERSION 0.4.2
 	HOMEPAGE_URL "https://github.com/mkckr0/audio-share"
 )
 
@@ -38,6 +38,9 @@ set(
 	"src/machine_name.cpp"
 	"src/directory.cpp"
 	"src/remote_control.cpp"
+	"src/pc_remote.cpp"
+	"src/camera_capture.cpp"
+	"src/session_crypto.cpp"
 	"src/local_dashboard.cpp"
 	"src/audio_manager.cpp"
 	"src/${PLATFORM_NAME}/audio_manager_impl.cpp"
@@ -57,6 +60,10 @@ find_package(asio CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(cxxopts CONFIG REQUIRED)
 target_link_libraries(server-cmd PRIVATE asio::asio spdlog::spdlog protobuf::libprotobuf cxxopts::cxxopts)
+
+if(${PLATFORM_NAME} STREQUAL "win32")
+	target_link_libraries(server-cmd PRIVATE bcrypt mf mfplat mfreadwrite mfuuid windowscodecs gdi32 shell32 ole32 psapi)
+endif()
 
 if(${PLATFORM_NAME} STREQUAL "linux")
 	find_package(PkgConfig REQUIRED)
