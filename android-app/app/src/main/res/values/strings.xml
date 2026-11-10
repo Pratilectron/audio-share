@@ -7,6 +7,7 @@
     <!-- Home Screen -->
     <string name="label_host">Host</string>
     <string name="label_port">Port</string>
+    <string name="label_token">Token (optional)</string>
     <!-- Audio Screen -->
     <string name="label_audio_track">Audio Track</string>
     <string name="label_volume_linear_gain">Volume(Linear Gain)</string>
@@ -52,4 +53,6 @@
     <string name="label_timeout">Connect timeout</string>
     <string name="label_unresolved_address">Unresolved address</string>
     <string name="label_connecting">Connecting</string>
+    <string name="label_authenticated">Authenticated</string>
+    <string name="label_auth_failed">Authentication failed, check the token</string>
 </resources>

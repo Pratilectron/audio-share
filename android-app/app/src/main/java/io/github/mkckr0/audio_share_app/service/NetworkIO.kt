@@ -43,6 +43,16 @@ suspend fun ByteWriteChannel.writeCMD(cmd: CMD) {
     flush()
 }
 
+suspend fun ByteWriteChannel.writeAuthToken(token: String) {
+    val bytes = token.toByteArray(Charsets.UTF_8)
+    writePacket(Buffer().apply {
+        writeIntLe(CMD.CMD_AUTH.ordinal)
+        writeIntLe(bytes.size)
+        write(bytes, 0, bytes.size)
+    }.build())
+    flush()
+}
+
 suspend fun ByteReadChannel.readByteBuffer(count: Int): ByteBuffer {
     return ByteBuffer.wrap(readByteArray(count))
 }

@@ -69,6 +69,34 @@ Audio Share can share Windows/Linux computer's audio to Android phone over netwo
 - Install APK to your phone and open it. Modify the "Host" part to make sure it's same as the value of previous step, such as `192.168.xxx.xxx`. Click "▶" button and enjoy the audio🎶.
 
 
+## Stream over the Internet
+The original project is designed for a LAN. This fork adds an "internet mode" so the phone can reach the PC from another network.
+
+### Windows GUI
+1. Type a token (or leave it empty, one is generated for you).
+2. Tick **Internet mode (auto port forwarding)** and click **Start Server**.
+3. The server binds every interface, asks the router to forward TCP and UDP port `65530` with UPnP, and shows the public address and token at the bottom of the window, for example:
+   `Internet: 203.0.113.7:65530    Token: K7Q2M9XA`
+4. On the phone, enter that public address as **Host**, `65530` as **Port**, and the token. Tap **▶**.
+
+### Command line
+```sh
+as-cmd --bind=0.0.0.0:65530 --upnp
+as-cmd --bind=0.0.0.0:65530 --upnp --token=MYTOKEN
+```
+`--upnp` generates a random token when `--token` is not given and prints the public endpoint in the log.
+
+### If the router does not support UPnP
+Forward port `65530` (both TCP and UDP) to the PC's LAN address in the router settings, then use your public IP as the host. You can find the public IP on the server window or with a site such as <https://ifconfig.me>.
+
+### If your ISP uses CGNAT
+UPnP and port forwarding cannot work behind carrier-grade NAT. Use a VPN mesh instead, such as [Tailscale](https://tailscale.com/) or [ZeroTier](https://www.zerotier.com/), install it on the PC and the phone, and use the VPN address of the PC as the host.
+
+### Security
+- With internet mode the server refuses every client that does not send the token first. Keep the token secret and change it if it leaks.
+- The protocol is **not encrypted**: the token and the PCM audio travel in clear text. Do not use this on untrusted networks if the audio is sensitive; a VPN (Tailscale/ZeroTier/WireGuard) adds encryption.
+- The phone app of this fork is required for the token handshake. The official app still works with the server when no token is configured.
+
 ## Configure Firewall Rules on Linux
 ### Add rules
 ```sh

@@ -1,0 +1,68 @@
+name: Build fork binaries
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build_server_mfc:
+    name: Build server-mfc
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: server-mfc
+    env:
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static-md
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: 10b7a178346f3f0abef60cecd5130e295afd8da4
+
+      - run: vcpkg integrate install
+
+      - run: vcpkg install asio protobuf spdlog[wchar] wil nlohmann-json
+
+      - run: msbuild /m /p:Configuration=Release,Platform=x64
+
+      - name: Checksum
+        run: cd x64/Release/ && sha256sum *.exe | tee $(ls *.exe).sha256
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-mfc
+          path: |
+            server-mfc/x64/Release/*.exe
+            server-mfc/x64/Release/*.sha256
+
+  build_app:
+    name: Build Android App
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: gradle
+
+      - run: chmod +x gradlew
+
+      - run: ./gradlew :app:assembleRelease
+
+      - name: Checksum
+        run: cd app/build/outputs/apk/release/ && sha256sum *.apk | tee $(ls *.apk).sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app
+          path: |
+            android-app/app/build/outputs/apk/release/*.apk
+            android-app/app/build/outputs/apk/release/*.sha256

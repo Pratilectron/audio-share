@@ -45,5 +45,8 @@ public:
 	CButton m_buttonReset;
 	CComboBox m_comboEncoding;
 	CButton m_buttonSoundPanel;
+	CButton m_checkInternet;
+	CEdit m_editToken;
+	CStatic m_staticInternet;
 	bool m_bStarted;
 };

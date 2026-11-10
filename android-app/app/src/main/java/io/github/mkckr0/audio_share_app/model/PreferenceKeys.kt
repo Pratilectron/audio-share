@@ -19,6 +19,7 @@ package io.github.mkckr0.audio_share_app.model
 object NetworkConfigKeys {
     const val HOST = "host"
     const val PORT = "port"
+    const val TOKEN = "token"
 }
 
 object AudioConfigKeys {

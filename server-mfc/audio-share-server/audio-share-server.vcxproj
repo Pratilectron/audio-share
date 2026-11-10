@@ -266,6 +266,7 @@
     <ClInclude Include="..\..\server-core\src\audio_manager.hpp" />
     <ClInclude Include="..\..\server-core\src\formatter.hpp" />
     <ClInclude Include="..\..\server-core\src\network_manager.hpp" />
+    <ClInclude Include="..\..\server-core\src\upnp_client.hpp" />
     <ClInclude Include="..\..\server-core\src\win32\audio_manager_impl.hpp" />
     <ClInclude Include="AppMsg.h" />
     <ClInclude Include="AudioShareServer.h" />
@@ -289,6 +290,12 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\..\server-core\src\network_manager.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\server-core\src\upnp_client.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>

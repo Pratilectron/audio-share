@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -69,6 +70,7 @@ fun HomeScreen(viewModel: HomeScreenViewModel = viewModel()) {
         is UiState.Success -> {
             var host by remember(uiState.host) { mutableStateOf(uiState.host) }
             var port by remember(uiState.port) { mutableStateOf(uiState.port.toString()) }
+            var token by remember(uiState.token) { mutableStateOf(uiState.token) }
             var started by remember { mutableStateOf(false) }
             val isHostError by remember { derivedStateOf {
                 host.isEmpty()
@@ -119,6 +121,19 @@ fun HomeScreen(viewModel: HomeScreenViewModel = viewModel()) {
                     )
                 }
 
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = {
+                        if (!it.contains(Regex("\\s"))) {
+                            token = it
+                        }
+                    },
+                    enabled = !started,
+                    label = { Text(context.getString(R.string.label_token)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+
                 IconButton(
                     onClick = {
                         if (isHostError || isPortError) {
@@ -129,7 +144,7 @@ fun HomeScreen(viewModel: HomeScreenViewModel = viewModel()) {
                                 activity.awaitMediaController().stop()
                             } else {
                                 try {
-                                    viewModel.saveNetWorkSettings(host, port.toInt()).join()
+                                    viewModel.saveNetWorkSettings(host, port.toInt(), token).join()
                                     activity.awaitMediaController().play()
                                 } catch (_: NumberFormatException) {
                                     return@launch

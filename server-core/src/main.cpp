@@ -15,6 +15,8 @@ int main(int argc, char* argv[])
     std::string help_string = "Example:\n";
     help_string += fmt::format("  {} -b\n", AUDIO_SHARE_BIN_NAME);
     help_string += fmt::format("  {} --bind={}\n", AUDIO_SHARE_BIN_NAME, default_address.empty() ? "192.168.3.2": default_address);
+    help_string += fmt::format("  {} --bind=0.0.0.0:65530 --upnp\n", AUDIO_SHARE_BIN_NAME);
+    help_string += fmt::format("  {} --bind=0.0.0.0:65530 --upnp --token=MYTOKEN\n", AUDIO_SHARE_BIN_NAME);
     help_string += fmt::format("  {} --bind={} --encoding=f32 --channels=2 --sample-rate=48000\n", AUDIO_SHARE_BIN_NAME, default_address.empty() ? "192.168.3.2": default_address);
     help_string += fmt::format("  {} -l\n", AUDIO_SHARE_BIN_NAME);
     help_string += fmt::format("  {} --list-encoding\n", AUDIO_SHARE_BIN_NAME);
@@ -30,6 +32,8 @@ int main(int argc, char* argv[])
         ("list-encoding", "List available encoding")
         ("channels", "Specify the capture channels. If not set or set \"0\", will use default", cxxopts::value<int>()->default_value("0"), "[channels]")
         ("sample-rate", "Specify the capture sample rate(Hz). If not set or set \"0\", will use default. The common values are 44100, 48000, etc.", cxxopts::value<int>()->default_value("0"), "[sample_rate]")
+        ("token", "Require clients to authenticate with this token. Generated automatically with --upnp when empty", cxxopts::value<string>()->default_value(""), "[token]")
+        ("upnp", "Ask the router to forward the port with UPnP and print the public address")
         ("V,verbose", "Set log level to \"trace\"")
         ("v,version", "Show version")
         ;
@@ -102,7 +106,9 @@ int main(int argc, char* argv[])
 
             auto network_manager = std::make_shared<class network_manager>(audio_manager);
 
-            network_manager->start_server(host, port, capture_config);
+            network_manager->start_server(host, port, capture_config,
+                                          result["token"].as<string>(),
+                                          result.count("upnp") > 0);
             network_manager->wait_server();
 
             return EXIT_SUCCESS;

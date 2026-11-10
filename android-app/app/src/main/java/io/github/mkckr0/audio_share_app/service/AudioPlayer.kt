@@ -107,6 +107,7 @@ class AudioPlayer(val context: Context) : SimpleBasePlayer(Looper.getMainLooper(
                     ?: context.getString(R.string.default_host)
                 val port = networkConfig[intPreferencesKey(NetworkConfigKeys.PORT)]
                     ?: context.getInteger(R.integer.default_port)
+                val token = networkConfig[stringPreferencesKey(NetworkConfigKeys.TOKEN)] ?: ""
 
                 val mediaItem = MediaItem.fromUri("tcp://$host:$port").buildUpon()
                     .setMediaMetadata(
@@ -134,6 +135,7 @@ class AudioPlayer(val context: Context) : SimpleBasePlayer(Looper.getMainLooper(
                 netClient.start(
                     host = host,
                     port = port,
+                    token = token,
                     callback = NetClientCallBack()
                 )
             } else {
@@ -315,9 +317,11 @@ class AudioPlayer(val context: Context) : SimpleBasePlayer(Looper.getMainLooper(
                     ?: context.getString(R.string.default_host)
                 val port = networkConfig[intPreferencesKey(NetworkConfigKeys.PORT)]
                     ?: context.getInteger(R.integer.default_port)
+                val token = networkConfig[stringPreferencesKey(NetworkConfigKeys.TOKEN)] ?: ""
                 netClient.start(
                     host = host,
                     port = port,
+                    token = token,
                     callback = NetClientCallBack()
                 )
             }

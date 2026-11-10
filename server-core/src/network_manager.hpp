@@ -49,6 +49,7 @@ class network_manager : public std::enable_shared_from_this<network_manager>
         cmd_get_format = 1,
         cmd_start_play = 2,
         cmd_heartbeat = 3,
+        cmd_auth = 4,
     };
 
 public:
@@ -61,10 +62,16 @@ private:
     static std::string select_default_address(const std::vector<std::string>& address_list);
 
 public:
-    void start_server(const std::string& host, uint16_t port, const audio_manager::capture_config& capture_config);
+    void start_server(const std::string& host, uint16_t port, const audio_manager::capture_config& capture_config,
+                      const std::string& token = {}, bool enable_upnp = false);
     void stop_server();
     void wait_server();
     bool is_running() const;
+
+    // Public address (ip:port) when UPnP forwarding succeeded, empty otherwise.
+    std::string get_external_endpoint() const;
+    // Token clients must send when authentication is enabled, empty otherwise.
+    std::string get_token() const;
 
 private:
     asio::awaitable<void> accept_tcp_loop(tcp_acceptor acceptor);
@@ -87,6 +94,10 @@ private:
     std::thread _net_thread;
     std::unique_ptr<udp_socket> _udp_server;
     playing_peer_list_t _playing_peer_list;
+    std::string _token;
+    std::string _external_endpoint;
+    bool _upnp_mapped = false;
+    uint16_t _port = 0;
     constexpr static auto _heartbeat_timeout = std::chrono::seconds(5);
 };
 

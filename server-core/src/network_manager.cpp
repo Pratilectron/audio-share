@@ -17,8 +17,10 @@
 #include "network_manager.hpp"
 #include "formatter.hpp"
 #include "audio_manager.hpp"
+#include "upnp_client.hpp"
 
 #include <list>
+#include <random>
 #include <ranges>
 #include <coroutine>
 
@@ -40,6 +42,24 @@
 
 namespace ip = asio::ip;
 using namespace std::chrono_literals;
+
+namespace {
+
+std::string generate_token(size_t length = 8)
+{
+    static constexpr char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    std::random_device random;
+    std::uniform_int_distribution<size_t> distribution(0, sizeof(alphabet) - 2);
+
+    std::string token;
+    token.reserve(length);
+    for (size_t i = 0; i < length; ++i) {
+        token.push_back(alphabet[distribution(random)]);
+    }
+    return token;
+}
+
+} // namespace
 
 network_manager::network_manager(std::shared_ptr<audio_manager>& audio_manager)
     : _audio_manager(audio_manager)
@@ -145,8 +165,20 @@ std::string network_manager::select_default_address(const std::vector<std::strin
     return address_list.front();
 }
 
-void network_manager::start_server(const std::string& host, uint16_t port, const audio_manager::capture_config& capture_config)
+void network_manager::start_server(const std::string& host, uint16_t port, const audio_manager::capture_config& capture_config,
+                                   const std::string& token, bool enable_upnp)
 {
+    _token = token;
+    _port = port;
+    _external_endpoint.clear();
+    _upnp_mapped = false;
+
+    if (enable_upnp && _token.empty()) {
+        // Exposing the server to the internet without a token would let anyone
+        // who finds the port listen to the captured audio.
+        _token = generate_token();
+    }
+
     _ioc = std::make_shared<asio::io_context>();
     {
         ip::tcp::endpoint endpoint { ip::make_address(host), port };
@@ -173,6 +205,34 @@ void network_manager::start_server(const std::string& host, uint16_t port, const
         spdlog::info("udp listen success on {}", endpoint);
     }
 
+    if (enable_upnp) {
+        auto internal_ip = host;
+        if (internal_ip == "0.0.0.0" || internal_ip == "::") {
+            internal_ip = get_default_address();
+        }
+
+        auto result = upnp_client::map_port(port, internal_ip, "Audio Share");
+        if (result.success) {
+            _upnp_mapped = true;
+            if (!result.external_ip.empty()) {
+                _external_endpoint = fmt::format("{}:{}", result.external_ip, port);
+                spdlog::info("upnp port forwarding success, public endpoint {}", _external_endpoint);
+            }
+            if (!result.error.empty()) {
+                spdlog::warn("upnp: {}", result.error);
+            }
+        } else {
+            spdlog::warn("upnp port forwarding failed: {}", result.error);
+        }
+    }
+
+    if (!_token.empty()) {
+        spdlog::info("authentication token: {}", _token);
+        if (!_external_endpoint.empty()) {
+            spdlog::info("connect from the internet with host {} and token {}", _external_endpoint, _token);
+        }
+    }
+
     _net_thread = std::thread([self = shared_from_this()] {
         self->_ioc->run();
     });
@@ -190,7 +250,22 @@ void network_manager::stop_server()
     _playing_peer_list.clear();
     _udp_server = nullptr;
     _ioc = nullptr;
+    if (_upnp_mapped) {
+        upnp_client::unmap_port(_port);
+        _upnp_mapped = false;
+    }
+    _external_endpoint.clear();
     spdlog::info("server stopped");
+}
+
+std::string network_manager::get_external_endpoint() const
+{
+    return _external_endpoint;
+}
+
+std::string network_manager::get_token() const
+{
+    return _token;
 }
 
 void network_manager::wait_server()
@@ -215,6 +290,57 @@ asio::awaitable<void> network_manager::read_loop(std::shared_ptr<tcp_socket> pee
         }
 
         spdlog::trace("cmd {}", (uint32_t)cmd);
+
+        if (cmd == cmd_t::cmd_auth) {
+            uint32_t token_size = 0;
+            {
+                auto [ec, n] = co_await asio::async_read(*peer, asio::buffer(&token_size, sizeof(token_size)));
+                if (ec) {
+                    close_session(peer);
+                    break;
+                }
+            }
+            if (token_size > 4096) {
+                spdlog::warn("auth token too large from {}", peer->remote_endpoint());
+                close_session(peer);
+                break;
+            }
+
+            std::string client_token(token_size, '\0');
+            if (token_size > 0) {
+                auto [ec, n] = co_await asio::async_read(*peer, asio::buffer(client_token.data(), client_token.size()));
+                if (ec) {
+                    close_session(peer);
+                    break;
+                }
+            }
+
+            {
+                int32_t status = (_token.empty() || client_token == _token) ? 0 : 1;
+                std::array<asio::const_buffer, 2> buffers = {
+                    asio::buffer(&cmd, sizeof(cmd)),
+                    asio::buffer(&status, sizeof(status)),
+                };
+                auto [write_ec, n] = co_await asio::async_write(*peer, buffers);
+                if (write_ec) {
+                    close_session(peer);
+                    break;
+                }
+                if (status != 0) {
+                    spdlog::warn("auth failed from {}", peer->remote_endpoint());
+                    close_session(peer);
+                    break;
+                }
+            }
+            spdlog::info("auth success from {}", peer->remote_endpoint());
+            continue;
+        }
+
+        if (!_token.empty()) {
+            spdlog::warn("unauthenticated command {} from {}", (uint32_t)cmd, peer->remote_endpoint());
+            close_session(peer);
+            break;
+        }
 
         if (cmd == cmd_t::cmd_get_format) {
             auto format = _audio_manager->get_format_binary();

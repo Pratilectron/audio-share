@@ -40,13 +40,15 @@ class HomeScreenViewModel(application: Application) : AndroidViewModel(applicati
         data class Success(
             val host: String,
             val port: Int,
+            val token: String,
         ) : UiState
     }
 
     val uiState: StateFlow<UiState> = application.networkConfigDataStore.data.map {
         UiState.Success(
             host = it[stringPreferencesKey(NetworkConfigKeys.HOST)] ?: application.getString(R.string.default_host),
-            port = it[intPreferencesKey(NetworkConfigKeys.PORT)] ?: application.getInteger(R.integer.default_port)
+            port = it[intPreferencesKey(NetworkConfigKeys.PORT)] ?: application.getInteger(R.integer.default_port),
+            token = it[stringPreferencesKey(NetworkConfigKeys.TOKEN)] ?: ""
         )
     }.stateIn(
         scope = viewModelScope,
@@ -54,11 +56,12 @@ class HomeScreenViewModel(application: Application) : AndroidViewModel(applicati
         initialValue = UiState.Loading,
     )
 
-    fun saveNetWorkSettings(host: String, port: Int): Job {
+    fun saveNetWorkSettings(host: String, port: Int, token: String): Job {
         return viewModelScope.launch {
             getApplication<Application>().networkConfigDataStore.edit {
                 it[stringPreferencesKey(NetworkConfigKeys.HOST)] = host
                 it[intPreferencesKey(NetworkConfigKeys.PORT)] = port
+                it[stringPreferencesKey(NetworkConfigKeys.TOKEN)] = token
             }
         }
     }

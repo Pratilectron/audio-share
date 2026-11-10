@@ -42,6 +42,9 @@ void CServerTabPanel::DoDataExchange(CDataExchange* pDX)
     DDX_Control(pDX, IDC_BUTTON_RESET, m_buttonReset);
     DDX_Control(pDX, IDC_COMBO_ENCODING, m_comboEncoding);
     DDX_Control(pDX, IDC_BUTTON_SOUND_PANEL, m_buttonSoundPanel);
+    DDX_Control(pDX, IDC_CHECK_INTERNET, m_checkInternet);
+    DDX_Control(pDX, IDC_EDIT_TOKEN, m_editToken);
+    DDX_Control(pDX, IDC_STATIC_INTERNET, m_staticInternet);
 }
 
 
@@ -60,6 +63,7 @@ BOOL CServerTabPanel::OnInitDialog()
 
     // TODO:  Add extra initialization here
     m_editPort.SetLimitText(5);
+    m_editToken.SetLimitText(64);
 
     // init controls data
     this->OnBnClickedButtonReset();
@@ -95,6 +99,13 @@ void CServerTabPanel::OnBnClickedButtonReset()
     // port
     {
         m_editPort.SetWindowTextW(theApp.GetProfileStringW(L"Network", L"port", L"65530"));
+    }
+
+    // internet mode
+    {
+        m_checkInternet.SetCheck(theApp.GetProfileIntW(L"Internet", L"enabled", 0) ? BST_CHECKED : BST_UNCHECKED);
+        m_editToken.SetWindowTextW(theApp.GetProfileStringW(L"Internet", L"token", L""));
+        m_staticInternet.SetWindowTextW(L"");
     }
 
     CString defaultString;
@@ -185,16 +196,24 @@ void CServerTabPanel::OnBnClickedStartServer()
         EnableInputControls(false);
         m_buttonServer.EnableWindow(false);
 
-        CString host_str, port_str;
+        bool internet = m_checkInternet.GetCheck() == BST_CHECKED;
+
+        CString host_str, port_str, token_str;
         m_comboBoxHost.GetWindowTextW(host_str);
         m_editPort.GetWindowTextW(port_str);
+        m_editToken.GetWindowTextW(token_str);
         std::string host = wchars_to_mbs(host_str.GetString());
+        if (internet) {
+            // Listen on every interface so the router can forward the port.
+            host = "0.0.0.0";
+        }
         std::uint16_t port = std::stoi(wchars_to_mbs(port_str.GetString()));
+        std::string token = wchars_to_mbs(token_str.GetString());
         audio_manager::capture_config config;
         config.endpoint_id = wchars_to_mbs((LPCWSTR)m_comboBoxAudioEndpoint.GetItemDataPtr(m_comboBoxAudioEndpoint.GetCurSel()));
         config.encoding = (audio_manager::encoding_t)m_comboEncoding.GetItemData(m_comboEncoding.GetCurSel());
         try {
-            m_network_manager->start_server(host, port, config);
+            m_network_manager->start_server(host, port, config, token, internet);
         }
         catch (std::exception& e) {
             AfxMessageBox(CString(e.what()), MB_OK | MB_ICONSTOP);
@@ -216,6 +235,27 @@ void CServerTabPanel::OnBnClickedStartServer()
         theApp.WriteProfileStringW(L"Network", L"port", port_str);
         theApp.WriteProfileStringW(L"Capture", L"endpoint", mbs_to_wchars(config.endpoint_id).c_str());
         theApp.WriteProfileInt(L"Capture", L"encoding", (int)config.encoding);
+        theApp.WriteProfileInt(L"Internet", L"enabled", internet);
+        if (internet) {
+            // The core generates a token when the field was left empty, keep it.
+            auto used_token = m_network_manager->get_token();
+            auto external_endpoint = m_network_manager->get_external_endpoint();
+            m_editToken.SetWindowTextW(mbs_to_wchars(used_token).c_str());
+            theApp.WriteProfileStringW(L"Internet", L"token", mbs_to_wchars(used_token).c_str());
+
+            CString info;
+            if (!external_endpoint.empty()) {
+                info.Format(L"Internet: %s    Token: %s",
+                            mbs_to_wchars(external_endpoint).c_str(),
+                            mbs_to_wchars(used_token).c_str());
+            } else {
+                info = L"Internet: UPnP port forwarding failed, forward the port on your router manually";
+            }
+            m_staticInternet.SetWindowTextW(info);
+        } else {
+            theApp.WriteProfileStringW(L"Internet", L"token", token_str);
+            m_staticInternet.SetWindowTextW(L"");
+        }
         theApp.WriteProfileInt(L"App", L"Running", true);
         m_bStarted = true;
     }
@@ -231,6 +271,7 @@ void CServerTabPanel::OnBnClickedStartServer()
         m_buttonServer.SetWindowTextW(s);
         m_buttonServer.SetFocus();
         theApp.WriteProfileInt(L"App", L"Running", false);
+        m_staticInternet.SetWindowTextW(L"");
         m_bStarted = false;
     }
 }
@@ -243,6 +284,8 @@ void CServerTabPanel::EnableInputControls(bool bEnable)
     m_buttonReset.EnableWindow(bEnable);
     m_comboEncoding.EnableWindow(bEnable);
     m_buttonSoundPanel.EnableWindow(bEnable);
+    m_checkInternet.EnableWindow(bEnable);
+    m_editToken.EnableWindow(bEnable);
 }
 
 

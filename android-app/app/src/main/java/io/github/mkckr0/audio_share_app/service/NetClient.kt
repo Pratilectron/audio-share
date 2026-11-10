@@ -79,6 +79,7 @@ class NetClient(val context: Context) {
         CMD_GET_FORMAT,
         CMD_START_PLAY,
         CMD_HEARTBEAT,
+        CMD_AUTH,
     }
 
     interface Callback {
@@ -96,7 +97,7 @@ class NetClient(val context: Context) {
         }
     }
 
-    fun start(host: String, port: Int, callback: Callback) {
+    fun start(host: String, port: Int, token: String, callback: Callback) {
         Log.d(tag, "$host:$port")
         _scope = defaultScope()
         scope.launch {
@@ -112,7 +113,7 @@ class NetClient(val context: Context) {
             _selectorManager = SelectorManager(Dispatchers.IO)
 
             try {
-                _tcpSocket = withTimeout(3.seconds) {
+                _tcpSocket = withTimeout(10.seconds) {
                     aSocket(selectorManager).tcp().connect(host, port)
                 }
             } catch (e: TimeoutCancellationException) {
@@ -127,6 +128,22 @@ class NetClient(val context: Context) {
 
             val tcpReadChannel = tcpSocket.openReadChannel()
             val tcpWriteChannel = tcpSocket.openWriteChannel()
+
+            // authenticate (only when a token is configured)
+            if (token.isNotEmpty()) {
+                tcpWriteChannel.writeAuthToken(token)
+                val authCmd = tcpReadChannel.readCMD()
+                if (authCmd != CMD.CMD_AUTH) {
+                    return@launch
+                }
+                val authStatus = tcpReadChannel.readIntLE()
+                if (authStatus != 0) {
+                    throw Exception(context.getString(R.string.label_auth_failed))
+                }
+                _callback?.launch {
+                    log(context.getString(R.string.label_authenticated))
+                }
+            }
 
             // get format
             tcpWriteChannel.writeCMD(CMD.CMD_GET_FORMAT)

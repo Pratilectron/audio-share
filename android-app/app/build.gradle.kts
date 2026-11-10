@@ -44,14 +44,17 @@ android {
 
     signingConfigs {
         create("release") {
-            val keystoreProperties = Properties().apply {
-                load(rootProject.file("keystore.properties").inputStream())
+            val keystorePropertiesFile = rootProject.file("keystore.properties")
+            if (keystorePropertiesFile.exists()) {
+                val keystoreProperties = Properties().apply {
+                    load(keystorePropertiesFile.inputStream())
+                }
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                enableV3Signing = true
             }
-            storeFile = file(keystoreProperties.getProperty("storeFile"))
-            keyAlias = keystoreProperties.getProperty("keyAlias")
-            storePassword = keystoreProperties.getProperty("storePassword")
-            keyPassword = keystoreProperties.getProperty("keyPassword")
-            enableV3Signing = true
         }
     }
 
@@ -62,7 +65,13 @@ android {
             isDebuggable = false
             isProfileable = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs["release"]
+            // Fall back to the debug key when no keystore.properties is present,
+            // so the fork can be built without the upstream signing secrets.
+            signingConfig = if (rootProject.file("keystore.properties").exists()) {
+                signingConfigs["release"]
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 
